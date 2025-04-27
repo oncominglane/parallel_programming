@@ -6,27 +6,38 @@
 #define NUM_THREADS 4
 
 int access_point = 0;
-pthread_mutex_t mutex; //Мьютекс — механизм блокировки, который разрешает только одному потоку одновременно войти в критическую секцию
+int current_thread = 0;
+
+pthread_mutex_t mutex;
+pthread_cond_t cond;
+
+//Мьютекс — механизм блокировки, который разрешает только одному потоку одновременно войти в критическую секцию
 
 void* increment(void* arg) {
     int thread_id = *(int*)arg;
 
-    // эмуляция задержки для имитации работы
-    usleep(10000000); 
+    pthread_mutex_lock(&mutex);// вход в критическая секция
+    while (thread_id != current_thread) {
+        pthread_cond_wait(&cond, &mutex);
+    }
 
-    pthread_mutex_lock(&mutex); // вход в критическую секцию
+    
     access_point++;
     printf("Thread %d incremented access point to %d\n", thread_id, access_point);
-    pthread_mutex_unlock(&mutex);// выход из критическую секцию
 
+    current_thread++;
+    pthread_cond_broadcast(&cond);  // разбудить всех
+
+    pthread_mutex_unlock(&mutex);// выход в критическая секция
     return NULL;
 }
 
 int main() {
     pthread_t threads[NUM_THREADS]; //Массив идентификаторов потоков
-    int thread_ids[NUM_THREADS]; //Массив для хранения уникального номера потока (0, 1, 2, ...)
+    int thread_ids[NUM_THREADS];    //Массив для хранения уникального номера потока (0, 1, 2, ...)
 
     pthread_mutex_init(&mutex, NULL);
+    pthread_cond_init(&cond, NULL);
 
     for (int i = 0; i < NUM_THREADS; i++) {
         thread_ids[i] = i;
@@ -38,9 +49,11 @@ int main() {
     }
 
     pthread_mutex_destroy(&mutex);
+    pthread_cond_destroy(&cond);
 
     return 0;
 }
+
 
 
 /*
