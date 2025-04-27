@@ -1,10 +1,11 @@
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
 #include <mpi.h>
 
-#define M 10000
-#define K 5000
+#include "config.h"
+
 #define a 1.0
 #define L 1.0
 #define T 1.0
