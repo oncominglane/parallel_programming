@@ -23,4 +23,4 @@ echo "### Параллельная: $TIME_PAR сек"
 echo "$TIME_SEQ $TIME_PAR" > timings.txt
 
 echo "### Запуск визуализации..."
-python3 graph.py
+python3 3D_graph.py
