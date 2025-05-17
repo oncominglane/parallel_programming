@@ -1,0 +1,10 @@
+*./build
+*.txt
+
+results.csv
+
+*.png
+
+
+sequential_transfer_eq
+parallel_transfer_eq
