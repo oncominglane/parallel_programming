@@ -54,8 +54,8 @@ int main() {
     return 0;
 }
 
-// gcc -O2 introduction_pthreads/circle_message_pthreads.c -o introduction_pthreads/pthread -pthread
-// ./introduction_pthreads/pthread
+// gcc -O2 sem1/introduction_pthreads/circle_message_pthreads.c -o sem1/introduction_pthreads/pthread -pthread
+// ./sem1/introduction_pthreads/pthread
 
 /*
 Программа запускает несколько потоков (NUM_THREADS), каждый из которых:

@@ -38,5 +38,5 @@ int main(int argc, char* argv[]) {
 // Порядок операций жёстко задан → при неизменном числе потоков получается 
 // бит-в-бит один и тот же результат.
 
-// g++ -std=c++17 -O2 -fopenmp introduction_OpenMP/harmonic_sum_openmp.c -o introduction_OpenMP/omp
-// OMP_NUM_THREADS=8 ./introduction_OpenMP/omp  10000000
+// g++ -std=c++17 -O2 -fopenmp sem2/introduction_OpenMP/harmonic_sum_openmp.c -o sem2/introduction_OpenMP/omp
+// OMP_NUM_THREADS=8 ./sem2/introduction_OpenMP/omp  10000000

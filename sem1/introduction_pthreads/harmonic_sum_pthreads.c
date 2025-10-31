@@ -60,5 +60,5 @@ int main(int argc, char* argv[]) {
 //Главный поток ждёт все pthread_join и складывает результат
 
 
-// gcc -O2 introduction_pthreads/harmonic_sum_pthreads.c -o introduction_pthreads/pthread -pthread
-// ./introduction_pthreads/pthread 10000000
+// gcc -O2 sem1/introduction_pthreads/harmonic_sum_pthreads.c -o sem1/introduction_pthreads/pthread -pthread
+// ./sem1/introduction_pthreads/pthread 10000000

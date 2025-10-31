@@ -26,5 +26,5 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
-// mpicc -O2 introduction_MPI/circle_message_mpi.c -o introduction_MPI/mpi
-// mpirun -np 4 ./introduction_MPI/mpi
+// mpicc -O2 sem1/introduction_MPI/circle_message_mpi.c -o sem1/introduction_MPI/mpi
+// mpirun -np 4 ./sem1/introduction_MPI/mpi
