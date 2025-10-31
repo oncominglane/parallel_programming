@@ -58,3 +58,7 @@ int main(int argc, char* argv[]) {
 //Потоки делят работу по принципу round-robin:  поток 0 берёт 1, 5, 9, ..., поток 1 — 2, 6, 10, и т.д.
 //Каждый считает свою часть и сохраняет её в partial_sum
 //Главный поток ждёт все pthread_join и складывает результат
+
+
+// gcc -O2 introduction_pthreads/harmonic_sum_pthreads.c -o introduction_pthreads/pthread -pthread
+// ./introduction_pthreads/pthread 10000000

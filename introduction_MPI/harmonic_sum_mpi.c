@@ -34,3 +34,6 @@ int main(int argc, char *argv[]) {
     MPI_Finalize();
     return 0;
 }
+
+// mpicc -O2 introduction_MPI/harmonic_sum_mpi.c -o introduction_MPI/mpi
+// mpirun -np 4 ./introduction_MPI/mpi 10000000
