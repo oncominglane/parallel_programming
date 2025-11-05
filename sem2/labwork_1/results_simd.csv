@@ -1,0 +1,17 @@
+algo,N,repeat,time_sec
+simd_blocked(T=64;W=256),64,1,4.2409e-05
+simd_blocked(T=64;W=256),128,1,0.00055243
+simd_blocked(T=64;W=256),256,1,0.00628676
+simd_blocked(T=64;W=256),384,1,0.015546
+simd_blocked(T=64;W=256),512,1,0.118257
+simd_blocked(T=64;W=256),768,1,0.180254
+simd_blocked(T=64;W=256),1024,1,0.955497
+simd_blocked(T=64;W=256),2048,1,16.5829
+simd_strassen(leaf=64),64,1,4.0446e-05
+simd_strassen(leaf=64),128,1,0.00086337
+simd_strassen(leaf=64),256,1,0.00655629
+simd_strassen(leaf=64),384,1,0.0417918
+simd_strassen(leaf=64),512,1,0.0362905
+simd_strassen(leaf=64),768,1,0.286198
+simd_strassen(leaf=64),1024,1,0.212236
+simd_strassen(leaf=64),2048,1,1.59064
