@@ -43,43 +43,30 @@ static void mmul_simd_leaf(const std::vector<double>& A,
                            std::vector<double>& C, int n)
 {
     std::fill(C.begin(), C.end(), 0.0);
+
     for (int i = 0; i < n; ++i) {
-        for (int j = 0; j + VLEN <= n; j += VLEN) {
+        for (int k = 0; k < n; ++k) {
+            const double aik = A[i*n + k];
+
         #if defined(__AVX2__)
-            __m256d sumv = _mm256_setzero_pd();
-        #elif defined(__SSE2__)
-            __m128d sumv = _mm_setzero_pd();
-        #else
-            double sumv = 0.0; // не используется для VLEN>1
-        #endif
-            for (int k = 0; k < n; ++k) {
-                double aik = A[i*n + k];
-            #if defined(__AVX2__)
-                __m256d a = _mm256_set1_pd(aik);
+            __m256d a = _mm256_set1_pd(aik);
+            int j = 0;
+            for (; j + 4 <= n; j += 4) {
+                __m256d c = _mm256_loadu_pd(&C[i*n + j]);
                 __m256d b = _mm256_loadu_pd(&B[k*n + j]);
-                sumv = fmadd_pd(a, b, sumv);
-            #elif defined(__SSE2__)
-                __m128d a = _mm_set1_pd(aik);
-                __m128d b = _mm_loadu_pd(&B[k*n + j]);
-                sumv = fmadd_pd(a, b, sumv);
-            #else
-                (void)aik;
-            #endif
+                c = _mm256_fmadd_pd(a, b, c);
+                _mm256_storeu_pd(&C[i*n + j], c);
             }
-        #if defined(__AVX2__)
-            _mm256_storeu_pd(&C[i*n + j], sumv);
-        #elif defined(__SSE2__)
-            _mm_storeu_pd(&C[i*n + j], sumv);
+            for (; j < n; ++j) C[i*n + j] += aik * B[k*n + j];
+
+
+        #else
+            for (int j = 0; j < n; ++j) C[i*n + j] += aik * B[k*n + j];
         #endif
-        }
-        // хвост
-        for (int j = (n/VLEN)*VLEN; j < n; ++j) {
-            double sum = 0.0;
-            for (int k = 0; k < n; ++k) sum += A[i*n + k] * B[k*n + j];
-            C[i*n + j] = sum;
         }
     }
 }
+
 
 // простые операции для Страссена
 static void add(const std::vector<double>& A, const std::vector<double>& B, std::vector<double>& C, int n) {

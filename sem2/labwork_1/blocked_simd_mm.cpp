@@ -58,44 +58,37 @@ static void mmul_blocked_simd(const std::vector<double>& A,
                 int jjmax = std::min(jj + T, N);
 
                 for (int i = ii; i < iimax; ++i) {
-                    for (int j = jj; j + VLEN <= jjmax; j += VLEN) {
-                        // Инициализируем вектор суммой из C (вклад предыдущих kk-блоков)
+                    for (int k = kk; k < kkmax; ++k) {
+                        const double aik = A[i*N + k];
+
                     #if defined(__AVX2__)
-                        __m256d sumv = _mm256_loadu_pd(&C[i*N + j]);
-                    #elif defined(__SSE2__)
-                        __m128d sumv = _mm_loadu_pd(&C[i*N + j]);
-                    #else
-                        double sumv_scalar = C[i*N + j];
-                    #endif
-                        for (int k = kk; k < kkmax; ++k) {
-                            double aik = A[i*N + k];
-                        #if defined(__AVX2__)
-                            __m256d a = _mm256_set1_pd(aik);
+                        __m256d a = _mm256_set1_pd(aik);
+                        int j = jj;
+                        for (; j + 4 <= jjmax; j += 4) {
+                            __m256d c = _mm256_loadu_pd(&C[i*N + j]);
                             __m256d b = _mm256_loadu_pd(&B[k*N + j]);
-                            sumv = fmadd_pd(a, b, sumv);
-                        #elif defined(__SSE2__)
-                            __m128d a = _mm_set1_pd(aik);
-                            __m128d b = _mm_loadu_pd(&B[k*N + j]);
-                            sumv = fmadd_pd(a, b, sumv);
-                        #else
-                            sumv_scalar += aik * B[k*N + j];
-                        #endif
+                            c = _mm256_fmadd_pd(a, b, c);  // если нет FMA, компилятор заменит на mul+add
+                            _mm256_storeu_pd(&C[i*N + j], c);
                         }
-                    #if defined(__AVX2__)
-                        _mm256_storeu_pd(&C[i*N + j], sumv);
+                        for (; j < jjmax; ++j)
+                            C[i*N + j] += aik * B[k*N + j];
+
                     #elif defined(__SSE2__)
-                        _mm_storeu_pd(&C[i*N + j], sumv);
-                    #else
-                        C[i*N + j] = sumv_scalar;
-                    #endif
-                    }
-                    // «хвост» (если ширина тайла не кратна VLEN)
-                    for (int j = jj + ( (jjmax-jj)/VLEN )*VLEN; j < jjmax; ++j) {
-                        double sum = C[i*N + j];
-                        for (int k = kk; k < kkmax; ++k) {
-                            sum += A[i*N + k] * B[k*N + j];
+                        __m128d a = _mm_set1_pd(aik);
+                        int j = jj;
+                        for (; j + 2 <= jjmax; j += 2) {
+                            __m128d c = _mm_loadu_pd(&C[i*N + j]);
+                            __m128d b = _mm_loadu_pd(&B[k*N + j]);
+                            c = _mm_add_pd(_mm_mul_pd(a,b), c);
+                            _mm_storeu_pd(&C[i*N + j], c);
                         }
-                        C[i*N + j] = sum;
+                        for (; j < jjmax; ++j)
+                            C[i*N + j] += aik * B[k*N + j];
+
+                    #else
+                        for (int j = jj; j < jjmax; ++j)
+                            C[i*N + j] += aik * B[k*N + j];
+                    #endif
                     }
                 }
             }

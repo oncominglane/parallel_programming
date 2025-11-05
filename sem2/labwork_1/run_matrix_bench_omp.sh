@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Сравнение параллельных (OpenMP) версий: omp_blocked и omp_strassen.
+# Сравнение параллельных (OpenMP) версий: omp_blocked, omp_strassen и omp_hybrid.
 # Использование:
 #   bash run_matrix_bench_omp.sh [OUT_CSV]
 #
@@ -7,7 +7,10 @@
 #   THREADS="1 2 4 8"      # список значений OMP_NUM_THREADS
 #   TILES="32 64 128"      # размеры тайла для omp_blocked
 #   LEAF=64                # порог листа для Strassen (переключение на обычное умножение)
-#   CUT=256                # минимальный размер, при котором ещё создаём OpenMP-задачи
+#   CUT=256                # минимальный размер, при котором ещё создаём OpenMP-задачи (Strassen)
+#   HYBRID_LEAF=128        # порог листа для гибрида
+#   HYBRID_T=64            # тайл листа для гибрида
+#   HYBRID_CUT=256         # порог создания задач для гибрида
 #   APPEND=1               # не удалять OUT_CSV перед запуском
 #   CXX, CXXFLAGS          # переопределить компилятор/флаги
 
@@ -16,10 +19,13 @@ set -euo pipefail
 CXX=${CXX:-g++}
 CXXFLAGS=${CXXFLAGS:--O3 -march=native -std=c++17 -fopenmp}
 
-THREADS=${THREADS:-"1 2 4 8"}
+THREADS=${THREADS:-"8"}
 TILES=${TILES:-"64"}
 LEAF=${LEAF:-64}
 CUT=${CUT:-256}
+HYBRID_LEAF=${HYBRID_LEAF:-128}
+HYBRID_T=${HYBRID_T:-64}
+HYBRID_CUT=${HYBRID_CUT:-256}
 OUT=${1:-results_omp.csv}
 
 # --- сборка ---
@@ -33,14 +39,20 @@ else
   $CXX $CXXFLAGS omp_strassen_mm.cpp -o build/omp_strassen_mm
 fi
 
+# Гибрид (Strassen + tasks, leaf = блочное ядро с упаковкой)
+$CXX $CXXFLAGS omp_hybrid_mm.cpp -o build/omp_hybrid_mm
+
 # --- CSV: подготовка один раз ---
 if [ "${APPEND:-0}" != "1" ]; then rm -f "$OUT"; fi
 
 echo "Writing to: $OUT"
-echo "THREADS: $THREADS"
-echo "TILES:   $TILES"
-echo "LEAF:    $LEAF"
-echo "CUT:     $CUT"
+echo "THREADS:      $THREADS"
+echo "TILES:        $TILES"
+echo "LEAF:         $LEAF"
+echo "CUT:          $CUT"
+echo "HYBRID_LEAF:  $HYBRID_LEAF"
+echo "HYBRID_T:     $HYBRID_T"
+echo "HYBRID_CUT:   $HYBRID_CUT"
 
 # --- стабильность замеров ---
 export OMP_DYNAMIC=${OMP_DYNAMIC:-false}
@@ -59,6 +71,9 @@ for P in $THREADS; do
 
   # Strassen + OMP tasks
   ./build/omp_strassen_mm "$OUT" "$LEAF" "$CUT"
+
+  # Hybrid + OMP tasks (Strassen верх, leaf = блочный с упаковкой)
+  ./build/omp_hybrid_mm "$OUT" "$HYBRID_LEAF" "$HYBRID_T" "$HYBRID_CUT"
 done
 
 # --- защита CSV от запятой внутри меток (если код ещё не экранирует) ---
