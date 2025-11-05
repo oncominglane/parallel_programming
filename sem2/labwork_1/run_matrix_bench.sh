@@ -18,7 +18,6 @@ OUT=${1:-results.csv}
 rm -f "$OUT"
 
 # Run binaries; they append to the same CSV and add header if needed
-
 ./build/naive_mm "$OUT"
 ./build/transpose_mm "$OUT"
 

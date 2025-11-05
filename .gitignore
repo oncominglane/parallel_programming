@@ -2,7 +2,7 @@
 *.txt
 
 results.csv
-
+labwork_1/build
 
 sequential_transfer_eq
 parallel_transfer_eq
