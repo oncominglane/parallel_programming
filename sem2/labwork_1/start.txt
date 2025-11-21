@@ -1,0 +1,13 @@
+bash scripts/run_matrix_bench_seq.sh      
+LC_ALL=C LANG=C python3 plot_runtime.py results/results_seq.csv results/runtime_vs_N_seq.png
+
+bash scripts/run_matrix_bench_omp.sh 
+LC_ALL=C LANG=C python3 plot_runtime.py results/results_omp.csv results/runtime_vs_N_omp.png
+
+bash scripts/run_matrix_bench_simd.sh
+LC_ALL=C LANG=C python3 plot_runtime.py results/results_simd.csv results/runtime_vs_N_simd.png
+
+bash scripts/run_compare_2048.sh  
+
+bash scripts/run_matrix_bench_hybrids.sh
+LC_ALL=C LANG=C python3 plot_runtime.py results/results_hybrids.csv results/runtime_vs_N_hybrids.png

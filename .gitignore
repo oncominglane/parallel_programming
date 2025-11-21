@@ -1,8 +1,4 @@
-*./build
-*.txt
+*./build/
 
-results.csv
-labwork_1/build
-
-sequential_transfer_eq
-parallel_transfer_eq
+sem2/labwork_1/build
+sem2/labwork_2/build
