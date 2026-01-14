@@ -1,5 +1,7 @@
 /* var1e_mpi.c */
+
 #include <mpi.h>
+#include <math.h>
 #include "common.h"
 
 int main(int argc, char **argv) {
@@ -13,6 +15,16 @@ int main(int argc, char **argv) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
+    // Используем зависимость j-8 => размер коммуникатора должен делить 8
+    if (8 % size != 0) {
+        if (rank == 0) {
+            fprintf(stderr,
+                    "var1e_mpi: this version requires MPI size dividing 8 "
+                    "(1,2,4,8), got %d\n", size);
+        }
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+
     // Каждый процесс хранит весь массив (проще и достаточно для лабы)
     double *buf = alloc_matrix(ISIZE, JSIZE);
     double **a = wrap_2d(buf, ISIZE, JSIZE);
@@ -23,86 +35,85 @@ int main(int argc, char **argv) {
     // Рассылаем исходную матрицу всем
     MPI_Bcast(buf, ISIZE * JSIZE, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
-    // Делим диапазон строк [1, ISIZE) по процессам (строка 0 остаётся общей "сверху")
-    int total_rows = ISIZE - 1;      // строки 1..ISIZE-1 включительно
-    int base = total_rows / size;
-    int rem  = total_rows % size;
-
-    int my_rows = base + (rank < rem ? 1 : 0);
-    int offset  = 1; // начинаем с i = 1
-    for (int r = 0; r < rank; ++r)
-        offset += base + (r < rem ? 1 : 0);
-
-    int i_start = offset;
-    int i_end   = offset + my_rows;  // не включительно
-
-    double t0 = MPI_Wtime();
-
-    // Эстафета по блокам строк:
-    // - rank 0 сразу считает свои строки, опираясь на строку 0.
-    // - rank > 0 сначала ждёт готовую строку (i_start-1) от предыдущего rank.
-    if (rank > 0 && my_rows > 0) {
-        int src = rank - 1;
-        int row_above = i_start - 1; // эту строку посчитал предыдущий процесс
-        MPI_Recv(a[row_above], JSIZE, MPI_DOUBLE, src, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    // Считаем, сколько столбцов принадлежит этому рангу (j % size == rank, j >= 8)
+    int my_cols = 0;
+    for (int j = 8 + rank; j < JSIZE; j += size) {
+        ++my_cols;
     }
 
-    // Считаем свои строки последовательно, как в var1e_seq
-    for (int i = i_start; i < i_end; ++i) {
-        for (int j = 8; j < JSIZE; ++j) {
+    MPI_Barrier(MPI_COMM_WORLD);
+    double t0 = MPI_Wtime();
+
+    // Параллельная работа по столбцам
+    // Каждый ранг считает только свои столбцы j = 8+rank, 8+rank+size, ...
+    // При этом j-8 = rank + size*k, т.е. тот же ранг (так как 8 % size == 0).
+    for (int i = 1; i < ISIZE; ++i) {
+        for (int j = 8 + rank; j < JSIZE; j += size) {
             a[i][j] = sin(5.0 * a[i-1][j-8]);
         }
     }
 
-    // Если это не последний процесс и у нас есть строки —
-    // отправляем свою последнюю строку вниз по цепочке
-    if (rank < size - 1 && my_rows > 0) {
-        int dst = rank + 1;
-        int last_row = i_end - 1;
-        MPI_Send(a[last_row], JSIZE, MPI_DOUBLE, dst, 0, MPI_COMM_WORLD);
-    }
-
     double t1 = MPI_Wtime();
 
-    // Собираем результат на rank 0: все строки 1..ISIZE-1
-    // через MPI_Gatherv (каждый шлёт только свой блок строк).
-    int *recvcounts = NULL;
-    int *displs = NULL;
+    // Теперь собираем результат на rank 0.
+    // rank 0 уже содержит "свои" столбцы (j = 8, 8+size, ...),
+    // остальные ранги пришлют ему свои столбцы в виде упакованного буфера.
 
     if (rank == 0) {
-        recvcounts = (int*)malloc(size * sizeof(int));
-        displs     = (int*)malloc(size * sizeof(int));
+        // Принимаем данные от всех остальных рангов
+        for (int src = 1; src < size; ++src) {
+            // Считаем, сколько столбцов у этого src
+            int cols_src = 0;
+            for (int j = 8 + src; j < JSIZE; j += size) {
+                ++cols_src;
+            }
+            if (cols_src == 0)
+                continue;
 
-        int off_rows = 1; // начинаем заполнять с строки 1
-        for (int r = 0; r < size; ++r) {
-            int rows_r = base + (r < rem ? 1 : 0);
-            recvcounts[r] = rows_r * JSIZE;
-            displs[r]     = off_rows * JSIZE;
-            off_rows     += rows_r;
+            double *recvbuf = (double*)malloc((size_t)ISIZE * cols_src * sizeof(double));
+            if (!recvbuf) {
+                fprintf(stderr, "var1e_mpi: recvbuf alloc failed\n");
+                MPI_Abort(MPI_COMM_WORLD, 1);
+            }
+
+            MPI_Recv(recvbuf, ISIZE * cols_src, MPI_DOUBLE,
+                     src, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+            // Разворачиваем буфер обратно в матрицу a на ранге 0.
+            // Порядок упакован: по строкам i, внутри строки — по локальным столбцам.
+            for (int i = 0; i < ISIZE; ++i) {
+                int idx_row = i * cols_src;
+                int k = 0;
+                for (int j = 8 + src; j < JSIZE; j += size, ++k) {
+                    a[i][j] = recvbuf[idx_row + k];
+                }
+            }
+
+            free(recvbuf);
         }
-    }
 
-    // Локальный буфер отправки: наш блок строк
-    // Важно: даже если my_rows == 0, count=0 и указатель не трогают.
-    MPI_Gatherv(
-        my_rows > 0 ? a[i_start] : buf,    // отправляем с начала своего блока
-        my_rows * JSIZE,
-        MPI_DOUBLE,
-        buf,
-        recvcounts,
-        displs,
-        MPI_DOUBLE,
-        0,
-        MPI_COMM_WORLD
-    );
-
-    if (rank == 0) {
         printf("var1e_mpi: time = %.6f s (size=%d)\n", t1 - t0, size);
         write_matrix_txt(out_path, a, ISIZE, JSIZE);
-    }
+    } else {
+        // Ранги > 0 упаковывают свои столбцы и отправляют их на rank 0
+        if (my_cols > 0) {
+            double *sendbuf = (double*)malloc((size_t)ISIZE * my_cols * sizeof(double));
+            if (!sendbuf) {
+                fprintf(stderr, "var1e_mpi: sendbuf alloc failed (rank %d)\n", rank);
+                MPI_Abort(MPI_COMM_WORLD, 1);
+            }
 
-    if (recvcounts) free(recvcounts);
-    if (displs) free(displs);
+            int idx = 0;
+            for (int i = 0; i < ISIZE; ++i) {
+                for (int j = 8 + rank; j < JSIZE; j += size) {
+                    sendbuf[idx++] = a[i][j];
+                }
+            }
+
+            MPI_Send(sendbuf, ISIZE * my_cols, MPI_DOUBLE, 0, 0, MPI_COMM_WORLD);
+            free(sendbuf);
+        }
+    }
 
     free(a);
     free(buf);

@@ -5,7 +5,9 @@
  *
  * Метод Нумерова + Ньютон.
  * Трёхдиагональная система решается редукционным алгоритмом.
- * Параллелизм: OpenMP, 4 потока.
+ *
+ * Параллелизм: OpenMP по параметру b (ib = 0..10),
+ *              каждая независимая краевая задача решается в своём потоке.
  */
 
 #include <stdio.h>
@@ -15,7 +17,6 @@
 
 #define MAX_ITER   100
 #define NEWTON_EPS 1e-8
-#define NTHREADS   4
 
 typedef struct {
     int    n;
@@ -26,7 +27,7 @@ typedef struct {
     int    *idx;
 } Level;
 
-/* Параллельный редукционный решатель трёхдиагональной системы:
+/* Последовательный редукционный решатель трёхдиагональной системы:
  *
  * a[i] * x[i-1] + b[i] * x[i] + c[i] * x[i+1] = d[i], i = 0..n-1
  * a[0] = 0, c[n-1] = 0.
@@ -41,7 +42,7 @@ static void solve_tridiag_reduction_omp(int n,
 {
     if (n <= 0) return;
 
-    Level levels[64];   // log2(4000) < 12, запас
+    Level levels[64];   // log2(64000) < 16, запас
     int Lmax = 0;
 
     // Уровень 0 – исходная система
@@ -103,7 +104,7 @@ static void solve_tridiag_reduction_omp(int n,
         double *d   = cur->d;
         int    *idx = cur->idx;
 
-        // --- левый край: j = 0, k = 0 (оставим последовательно, мелочь) ---
+        // --- левый край: j = 0, k = 0 ---
         {
             int j = 0;
             int k = 0;
@@ -125,8 +126,7 @@ static void solve_tridiag_reduction_omp(int n,
             next->idx[k] = idx[j];
         }
 
-        // --- внутренние чётные узлы: можно параллелить ---
-        #pragma omp parallel for schedule(static)
+        // --- внутренние чётные узлы ---
         for (int j = 2; j <= internal_end; j += 2) {
             int k   = j / 2;
             int jm1 = j - 1;
@@ -158,7 +158,7 @@ static void solve_tridiag_reduction_omp(int n,
             next->idx[k] = idx[j];
         }
 
-        // --- правый край (если last_even реально конец) ---
+        // --- правый край ---
         if (has_right_boundary) {
             int j   = last_even;
             int k   = j / 2;
@@ -224,7 +224,6 @@ static void solve_tridiag_reduction_omp(int n,
         double *d  = cur->d;
         int    *idx = cur->idx;
 
-        #pragma omp parallel for schedule(static)
         for (int j = 0; j < nL; ++j) {
             if (j % 2 == 1) {
                 int glob = idx[j];
@@ -301,13 +300,11 @@ static int solve_for_b(int M, double b_value, double *y_out)
 
     int iter;
     for (iter = 0; iter < MAX_ITER; ++iter) {
-        // f = e^y  (можно параллельно)
-        #pragma omp parallel for schedule(static)
+        // f = e^y
         for (int i = 0; i <= M; ++i)
             f[i] = exp(y[i]);
 
-        // формируем F и матрицу Якоби (также параллельно по m)
-        #pragma omp parallel for schedule(static)
+        // формируем F и матрицу Якоби
         for (int m = 1; m <= M - 1; ++m) {
             int k = m - 1;
 
@@ -340,7 +337,6 @@ static int solve_for_b(int M, double b_value, double *y_out)
 
         // обновление и максимум приращения
         double max_delta = 0.0;
-        #pragma omp parallel for reduction(max:max_delta)
         for (int m = 1; m <= M - 1; ++m) {
             int k = m - 1;
             y[m] += delta[k];
@@ -375,36 +371,60 @@ static int solve_for_b(int M, double b_value, double *y_out)
 int main(int argc, char **argv)
 {
     if (argc < 2) {
-        fprintf(stderr, "Usage: %s N_points\n", argv[0]);
-        fprintf(stderr, "N_points: total grid points on [0,1], 400..4000\n");
+        fprintf(stderr, "Usage: %s N_points [n_threads]\n", argv[0]);
         return 1;
     }
 
-    int total_points = atoi(argv[1]);  // число узлов
+    int total_points = atoi(argv[1]);
     if (total_points < 3) {
         fprintf(stderr, "N_points must be >= 3\n");
         return 1;
     }
 
-    omp_set_num_threads(NTHREADS);
+    int nthreads = 4;
+    if (argc >= 3) {
+        int tmp = atoi(argv[2]);
+        if (tmp > 0)
+            nthreads = tmp;
+    }
+    omp_set_num_threads(nthreads);
 
     int M = total_points - 1;
     double h = 1.0 / M;
 
-    double *y = (double*)malloc((M + 1) * sizeof(double));
-    if (!y) {
-        fprintf(stderr, "Memory allocation error in main\n");
+    const int NB = 11;   // b = 0, 0.1, ..., 1.0
+    double *y_all = (double*)malloc(NB * (M + 1) * sizeof(double));
+    if (!y_all) {
+        fprintf(stderr, "Memory allocation error in main (y_all)\n");
         return 1;
     }
 
-    for (int ib = 0; ib <= 10; ++ib) {
+    int error_flag = 0;
+
+    /* --------- ПАРАЛЛЕЛЬНО: решаем задачи для всех b --------- */
+    #pragma omp parallel for schedule(static)
+    for (int ib = 0; ib < NB; ++ib) {
+        if (error_flag) continue;  // кто-то уже упал
+
         double b = ib * 0.1;
+        double *y = y_all + ib * (M + 1);
 
         if (solve_for_b(M, b, y) != 0) {
-            fprintf(stderr, "Error solving for b = %g\n", b);
-            free(y);
-            return 1;
+            #pragma omp atomic write
+            error_flag = 1;
         }
+    }
+
+    if (error_flag) {
+        fprintf(stderr, "Error during parallel solve_for_b\n");
+        free(y_all);
+        return 1;
+    }
+
+    /* --------- Последовательно печатаем решения --------- */
+    for (int ib = 0; ib < NB; ++ib) {
+        double b = ib * 0.1;
+        double *y = y_all + ib * (M + 1);
 
         printf("# Solution for b = %.2f\n", b);
         for (int i = 0; i <= M; ++i) {
@@ -414,6 +434,6 @@ int main(int argc, char **argv)
         printf("\n\n");
     }
 
-    free(y);
+    free(y_all);
     return 0;
 }

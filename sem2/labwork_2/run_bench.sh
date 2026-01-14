@@ -11,11 +11,11 @@ set -euo pipefail
 
 ISIZE=${ISIZE:-2000}
 JSIZE=${JSIZE:-2000}
-REPEATS=${REPEATS:-3}
+REPEATS=${REPEATS:-10}
 
 # Число потоков OpenMP и процессов MPI (можно переопределить перед запуском)
 OMP_THREAD_LIST="${OMP_THREAD_LIST:-1 2 3 4 6 8 12}"
-MPI_PROC_LIST="${MPI_PROC_LIST:-1 2 3 4 6}"
+MPI_PROC_LIST="${MPI_PROC_LIST:-1 2 4}"
 
 CC=${CC:-gcc}
 MPICC=${MPICC:-mpicc}
